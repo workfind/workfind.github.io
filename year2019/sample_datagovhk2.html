@@ -1,0 +1,107 @@
+<html>
+<head>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js"></script>
+</head>
+<body>
+<form>
+<input type="button" onclick="javascript:history.go(-1);" value="Go Back" />
+<select name="district" id="id_district">
+<option value="">...District...</option>
+<option value="hongkongisland">香港島</option>
+<option value="kowloon">九龍</option>
+</select>
+</form>
+<div id="id_display"></div>
+<script>
+var mylocations;
+var mytimer;
+function set_unit(aparam){
+	var akey = aparam["key"];
+	var aitem = aparam["item"];
+	var aurl = 'http://tdcctv.data.one.gov.hk/image?key='+akey;
+	var aelem;
+	var abaseurl = aparam["baseurl"];
+
+	aurl = jQuery(aitem).find("url").text();
+	aelem = jQuery("<div>");
+	jQuery(aelem).append("<hr width=\"100%\" \/>");
+	jQuery(aelem).append("<img src=\""+aurl+"?0\" width=\"100\" \/>");
+//	jQuery(aelem).append("<br \/>");
+	jQuery(aelem).append("<span>"+jQuery(aitem).find("description").text()+"<\/span>");
+	jQuery("#id_display").append(aelem);
+}
+function set_display(aparam){
+	var aurl;
+	var alat = 0;
+	var alon = 0;
+	var akey = aparam["key"];
+
+	jQuery("#id_display").html("");
+
+	if (akey == "hongkongisland"){
+		alat = 22.2446119;
+		alon = 114.1187988;
+	}
+	if (akey == "kowloon"){
+		alat = 22.329244;
+		alon = 114.1134057;
+	}
+	if (alat == 0){
+		return;
+	}
+	if (alon == 0){
+		return;
+	}
+	aurl = 'https://api.data.gov.hk/v1/nearest-traffic-snapshot-cameras?lat='+alat+'&long='+alon+'&max=10';
+
+	jQuery.ajax({
+		'url':aurl,
+		'method':'get',
+	}).done(function(amessage) {
+		[].forEach.call(amessage["results"],function(aitem){
+			var atemp = aitem["image"].replace(/\.JPG$/,"");
+			set_unit({
+				'key':atemp,
+				'item':jQuery(mylocations).find("image>key:contains('"+atemp+"')").parent(),
+				'baseurl':amessage["base-url"],
+			});
+		});
+	});
+
+	if (mytimer){
+		clearTimeout(mytimer);
+	}
+	mytimer = setTimeout(function(){jQuery("#id_district").trigger("change");},(1000*60));
+}
+function get_padleft(aparam){
+	s = aparam["text"];
+	s = s.toString();
+	if (s.length < aparam["max"]){
+		s = get_padleft({"text":aparam["pad"]+s,"max":aparam["max"],"pad":aparam["pad"],});
+	}
+	return s;
+}
+jQuery(document).ready(function(){
+	var aurl;
+	var anow;
+	var amonth;
+	var amonthday;
+	anow = (new Date());
+	amonth = get_padleft({"text":""+(anow.getMonth()+1),"max":2,"pad":"0",});
+	amonthday = get_padleft({"text":""+(anow.getDate()),"max":2,"pad":"0",});
+	aurl = 'https://api.data.gov.hk/v1/historical-archive/get-file?url=http%3A%2F%2Fstatic.data.gov.hk%2Ftd%2Ftraffic-snapshot-images%2Fcode%2FTraffic_Camera_Locations_En.xml&time='+anow.getFullYear()+amonth+amonthday+'-0000';
+
+	jQuery.ajax({
+		'url':aurl,
+		'method':'get',
+	}).done(function(amessage) {
+		mylocations = amessage;
+	});
+	jQuery("#id_district").on("change",function(e){
+		set_display({'key':jQuery(this).val()});
+	});
+});
+</script>
+
+</body>
+</html>
