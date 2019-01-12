@@ -1,0 +1,300 @@
+<html>
+<head>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js"></script>
+</head>
+<body>
+<form>
+<input type="button" onclick="javascript:history.go(-1);" value="Go Back" /> |
+<select name="language" id="id_language">
+<option value="">...Language...</option>
+<option value="english">English</option>
+<option value="chinese">Chinese</option>
+</select> |
+<input type="number" placeholder="e.g. 1 (1 km)" id="id_distance" />
+<input type="button" value="Refresh" id="id_refresh" />
+</form>
+<i>Usage: sample_datagovhk3.html?lat=22.3176&lon=114.2189&distancekilometre=1.0&</i>
+<div id="id_display"></div>
+<script>
+var mylocation;
+var mytimer;
+function get_twocoorddistance(aparam){
+	var aearthradiuskilometre = 6371.0;
+	var apoints = JSON.parse(JSON.stringify(aparam));
+
+	[].forEach.call(["from","to"],function(apoint){
+		[].forEach.call(["lat","lon"],function(acoord){
+			apoints[apoint][acoord] = parseFloat(aparam[apoint][acoord]);
+		});
+	});
+
+	var alatdistance = get_degreeradian({"degree":(apoints["to"]["lat"]-apoints["from"]["lat"])});
+	var alondistance = get_degreeradian({"degree":(apoints["to"]["lon"]-apoints["from"]["lon"])});
+
+	var a = (
+		Math.pow(Math.sin(alatdistance/2),2) +
+		(
+			Math.cos(get_degreeradian({"degree":apoints["from"]["lat"]})) *
+			Math.cos(get_degreeradian({"degree":apoints["to"]["lat"]})) *
+			Math.pow(Math.sin(alondistance/2),2)
+		)
+	);
+	var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+	var d = aearthradiuskilometre * c;
+	return d;
+}
+function set_cell(aparam){
+	var aelem;
+	var aentry = aparam["entry"];
+	var ainfo = aparam["info"];
+	var aurl;
+	var apoints = {};
+	apoints["from"] = {"lat":mylocation["latcentre"],"lon":mylocation["loncentre"],};
+	apoints["to"] = {"lat":aparam["info"]["latitude"],"lon":aparam["info"]["longitude"],};
+	var azoom = 16;
+	var amap = azoom+"/"+apoints["from"]["lat"]+"/"+apoints["from"]["lon"];
+	var aroute = "";
+	aroute = apoints["from"]["lat"]+","+apoints["from"]["lon"]+";"+apoints["to"]["lat"]+","+apoints["to"]["lon"]+"";
+	aroute = decodeURIComponent(aroute);
+
+	var aparameter = [];
+	aparameter[aparameter.length] = {"name":"engine","value":"osrm_car",};
+	aparameter[aparameter.length] = {"name":"route","value":""+aroute,};
+	aurl = 'https://www.openstreetmap.org/directions?'+jQuery.param(aparameter)+'#map='+amap;
+
+	var abbox = "";
+	abbox = mylocation["lonleft"]+","+mylocation["latbottom"]+","+mylocation["lonright"]+","+mylocation["lattop"];
+	var amarker = "";
+	amarker = apoints["to"]["lat"]+","+apoints["to"]["lon"];
+	aparameter = [];
+	aparameter[aparameter.length] = {"name":"bbox","value":""+decodeURIComponent(abbox),};
+	aparameter[aparameter.length] = {"name":"marker","value":""+decodeURIComponent(amarker),};
+	aparameter[aparameter.length] = {"name":"layers","value":"ND",};
+	aurl = 'https://www.openstreetmap.org/export/embed.html?'+jQuery.param(aparameter)+'';
+
+	var adistance = get_twocoorddistance(apoints);
+	aelem = jQuery("<div>");
+	jQuery(aelem).append("<hr width=\"100%\" \/>");
+	jQuery(aelem).append("<iframe src=\""+aurl+"\"></iframe>");
+	jQuery(aelem).append("<span> | <a !href=\""+aurl+"\" target=\"_blank\">"+aparam["info"]["name"]+"</a><\/span>");
+	jQuery(aelem).append("<span> | Distance: "+(Math.ceil(adistance*100000)/100000)+"</a> km<\/span>");
+	jQuery(aelem).append("<span> | Vacancy: "+aparam["entry"]["vacancy"]["privateCar"][0]["vacancy"]+"</a><\/span>");
+	jQuery("#id_display").append(aelem);	
+}
+function set_unit(aparam){
+	var avacancy = aparam["vacancy"];
+
+	var aurl;
+
+	var aparameter = [];
+	aparameter[aparameter.length] = {"name":"data","value":"info",};
+	aparameter[aparameter.length] = {"name":"vehicleTypes","value":"privateCar",};
+	aparameter[aparameter.length] = {"name":"carparkIds","value":""+aparam["vacancy"]["park_Id"],};
+	aparameter[aparameter.length] = {"name":"extent","value":"",};
+	aparameter[aparameter.length] = {"name":"lang","value":""+aparam["language"],};
+	aurl = 'https://api.data.gov.hk/v1/carpark-info-vacancy?'+jQuery.param(aparameter)+'&';
+
+	jQuery.ajax({
+		'url':aurl,
+		'method':'get',
+	}).done(function(amessage) {
+		[].forEach.call(amessage["results"],function(aitem){
+			try{
+				var atemp = {};
+				atemp["info"] = aitem;
+				atemp["entry"] = aparam;
+				set_cell(atemp);
+			}
+			catch(aexception){
+			}
+		});
+	});
+
+}
+function set_display(aparam){
+	var aurl;
+	var akey = aparam["key"];
+	var alanguage = "";
+	var anow = (new Date());
+
+	jQuery("#id_display").html("");
+	jQuery("#id_display").append("<h5>"+anow.toString()+"</h5>");
+
+	if (jQuery("#id_distance").val().trim() != ""){
+		mylocation["distancekilometre"] = parseFloat(jQuery("#id_distance").val());
+	}
+
+	set_boundrect({
+		"latcentre":mylocation["latcentre"],
+		"loncentre":mylocation["loncentre"],
+		"distancekilometre":mylocation["distancekilometre"],
+	});
+
+	alanguage = "";
+	if (akey == "english"){
+		alanguage = "en_US";
+	}
+	if (akey == "chinese"){
+		alanguage = "zh_TW";
+	}
+	if (alanguage == ""){
+		alanguage = "en_US";
+	}
+
+	var aextent = ""+
+		mylocation["lonleft"]+","+
+		mylocation["latbottom"]+","+
+		mylocation["lonright"]+","+
+		mylocation["lattop"]+
+		"";
+
+	var aparameter = [];
+	aparameter[aparameter.length] = {"name":"data","value":"vacancy",};
+	aparameter[aparameter.length] = {"name":"vehicleTypes","value":"privateCar",};
+	aparameter[aparameter.length] = {"name":"carparkIds","value":"",};
+	aparameter[aparameter.length] = {"name":"extent","value":aextent};
+	aparameter[aparameter.length] = {"name":"lang","value":""+alanguage,};
+	aurl = 'https://api.data.gov.hk/v1/carpark-info-vacancy?'+jQuery.param(aparameter)+'&';
+
+	jQuery.ajax({
+		'url':aurl,
+		'method':'get',
+	}).done(function(amessage) {
+		[].forEach.call(amessage["results"],function(aitem){
+			try{
+				if (aitem["privateCar"][0]["vacancy"] <= 0)
+				{
+					return true;
+				}
+				set_unit({"vacancy":aitem,"language":alanguage,});
+			}
+			catch(aexception){
+			}
+		});
+	});
+
+	if (mytimer){
+		clearTimeout(mytimer);
+	}
+//	mytimer = setTimeout(function(){jQuery("#id_language").trigger("change");},(1000*60)*0.25);
+}
+function get_degreeradian(aparam){
+	var n = 0.0;
+	n = aparam["degree"] * (Math.PI/180.0);
+	return n;
+}
+function get_radiandegree(aparam){
+	var n = 0.0;
+	n = aparam["radian"] * (180.0/Math.PI);
+	return n;
+}
+function get_bearingdistantcoord(aparam){
+	var aearthradiuskilometre = 6371.0;
+	var akilometre = parseFloat(aparam["distancekilometre"])*1.0;
+	var acoord = JSON.parse(JSON.stringify(aparam));
+	acoord["lat"] = aparam["latcentre"];
+	acoord["lon"] = aparam["loncentre"];
+
+	var lonrad = get_degreeradian({"degree":acoord["lon"],});
+	var latrad = get_degreeradian({"degree":acoord["lat"],});
+	var bearingrad = get_degreeradian({"degree":acoord["angledegree"],});
+
+	var maxlatrad = Math.asin(
+		(Math.sin(latrad) * Math.cos(akilometre/aearthradiuskilometre)) +
+		(Math.cos(latrad) * Math.sin(akilometre/aearthradiuskilometre) * Math.cos(bearingrad))
+	);
+	var maxlonrad = lonrad + Math.atan2(
+		(Math.sin(bearingrad) * Math.sin(akilometre/aearthradiuskilometre) * Math.cos(latrad)),
+		(Math.cos(akilometre/aearthradiuskilometre) - (Math.sin(latrad) * Math.sin(maxlatrad)))
+	);
+	var maxlat = get_radiandegree({"radian":maxlatrad,});
+	var maxlon = get_radiandegree({"radian":maxlonrad,});
+
+	acoord["lat"] = maxlat;
+	acoord["lon"] = maxlon;
+
+	return acoord;
+}
+function set_boundrect(aparam){
+	var atemp = JSON.parse(JSON.stringify(aparam));
+	var acoord;
+
+	atemp["angledegree"] = 225.0;
+	acoord = (get_bearingdistantcoord(atemp));
+	mylocation["lonleft"] = acoord["lon"];
+	mylocation["latbottom"] = acoord["lat"];
+
+	atemp["angledegree"] = 45.0;
+	acoord = (get_bearingdistantcoord(atemp));
+	mylocation["lonright"] = acoord["lon"];
+	mylocation["lattop"] = acoord["lat"];
+}
+function set_init(){
+	mylocation = {};
+
+	if (window.location.search != "")
+	{
+		if (window.location.search[0] == '?'){
+			var aparam = window.location.search.substring(1);
+			[].forEach.call(aparam.split("&"),function(aprop){
+				var atokens = aprop.split("=");
+				if (atokens.length < 2)
+				{
+					return true;
+				}
+				var akey = atokens[0];
+				var avalue = atokens[1];
+				avalue = decodeURIComponent(avalue);
+				if (akey == "lat"){
+					mylocation["latcentre"] = avalue;
+				}
+				if (akey == "lon"){
+					mylocation["loncentre"] = avalue;
+				}
+				if (akey == "distancekilometre"){
+					mylocation["distancekilometre"] = avalue;
+				}
+			});
+		}
+	}
+}
+function set_refresh(aparam){
+	if ("0" == "1"){
+		set_display(aparam);
+		return;
+	}
+
+	if (navigator.geolocation) {
+		navigator.geolocation.getCurrentPosition(
+			function(apos){
+				mylocation["latcentre"] = apos.coords.latitude;
+				mylocation["loncentre"] = apos.coords.longitude;
+				set_display(aparam);
+			},
+			function(aerror){
+				if (aerror.code == aerror.PERMISSION_DENIED)
+				{
+				}
+				if ((mylocation["latcentre"]) && ((mylocation["loncentre"])))
+				{
+					set_display(aparam);
+				}
+			}
+		);
+	}
+	else{
+		set_display(aparam);
+	}
+}
+jQuery(document).ready(function(){
+	set_init();
+	jQuery("#id_refresh").on("click",function(e){
+		var aselected = jQuery("#id_language").val();
+		set_refresh({'key':aselected});
+	});
+	set_refresh({'key':'english',});
+});
+</script>
+
+</body>
+</html>
